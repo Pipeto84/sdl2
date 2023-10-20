@@ -2,12 +2,14 @@ use std::{fs::File,io::{self,Write,Read},time::{SystemTime,Duration},thread::sle
 use sdl2::{EventPump,event::Event,keyboard::Keycode,pixels::Color,rect::Rect,render::{Canvas,Texture,
      TextureCreator},video::{Window,WindowContext}};
 const TETRIS_HEIGHT:usize=40;
+const GHOST_HEIGHT:usize=30;
 const HIGHSCORE_FILE:&'static str="scores.txt";
 const LEVEL_TIMES:[u32;10]=[1000,850,700,600,500,400,300,250,221,190];
 const LEVEL_LINES:[u32;10]=[20,40,60,80,100,120,140,160,180,200];
 const NB_HIGHSCORES:usize=5;
 type Piece=Vec<Vec<u8>>;
 type States=Vec<Piece>;
+#[derive(Clone)]
 struct Tetrimino{
      states:States,
      x:isize,
@@ -63,6 +65,7 @@ struct Tetris{
      score:u32,
      nb_lines:u32,
      current_piece:Option<Tetrimino>,
+     next_piece:Option<Tetrimino>,
 }
 impl Tetris {
      fn new()->Tetris {
@@ -76,6 +79,7 @@ impl Tetris {
                score:0,
                nb_lines:0,
                current_piece:None,
+               next_piece:None,
           }
     }
      fn update_score(&mut self,to_add:u32) {
@@ -157,7 +161,8 @@ impl Tetris {
           }
           self.update_score(to_add);
           self.check_lines();
-          self.current_piece=None;
+          self.current_piece=self.next_piece.clone();
+          self.next_piece=None;
      }
 }
 fn handle_events(tetris:&mut Tetris,quit:&mut bool,timer:&mut SystemTime,event_pump:&mut EventPump)->bool {
@@ -251,11 +256,11 @@ fn update_vec(v:&mut Vec<u32>,value:u32)->bool {
           v.sort();
           true
      }else {
-          for entry in v.iter_mut() {
-              if value > *entry {
-                  *entry = value;
-                  return true;
-              }
+          v.push(value);
+          v.sort_by(|a,b|b.cmp(a));
+          let x=v.pop().unwrap();
+          if value > x {
+              return true;
           }
           false
      }
@@ -339,6 +344,8 @@ fn main() {
           let mut event_pump=sdl2_context.event_pump().expect("fallo el event pump");
           let grid_x=20;
           let grid_y=(height-TETRIS_HEIGHT as u32 * 16)as i32 / 2;
+          let ghost_grid_x=480;
+          let ghost_grid_y=590;
           let mut tetris=Tetris::new();
           let window=video_subsystem.window("Tetris", width, height)
                .position_centered()
@@ -356,6 +363,12 @@ fn main() {
                .expect("fallo la creacion de textura");
           let border=create_texture_rect(&mut canvas, &texture_creator, 255, 255, 255, 
                TETRIS_HEIGHT as u32 * 10 + 20, TETRIS_HEIGHT as u32 * 16 + 20)
+               .expect("fallo la creacion de textura");
+          let ghost_grid=create_texture_rect(&mut canvas, &texture_creator, 0, 0, 0, 
+               GHOST_HEIGHT as u32 * 4, GHOST_HEIGHT as u32 * 4)
+               .expect("fallo la creacion de textura");
+          let ghost_border=create_texture_rect(&mut canvas, &texture_creator, 255, 255, 255, 
+               GHOST_HEIGHT as u32 * 4 + 20, GHOST_HEIGHT as u32 * 4 + 20)
                .expect("fallo la creacion de textura");
           macro_rules! texture {
                ($r:expr,$g:expr,$b:expr) => (
@@ -391,12 +404,38 @@ fn main() {
                     (height - TETRIS_HEIGHT as u32 * 16) as i32 / 2, 
                     TETRIS_HEIGHT as u32 * 10, TETRIS_HEIGHT as u32 * 16))
                     .expect("no se pudo copiar la textura en la ventana");
+               canvas.copy(&ghost_border, None, 
+                    Rect::new(470, 580, GHOST_HEIGHT as u32 * 4 + 20, GHOST_HEIGHT as u32 * 4 + 20))
+                    .expect("fallo textura ghost");
+               canvas.copy(&ghost_grid, None, 
+                    Rect::new(480, 590, GHOST_HEIGHT as u32 * 4, GHOST_HEIGHT as u32 * 4))
+                    .expect("fallo textura ghost");
                if tetris.current_piece.is_none() {
                     let current_piece=tetris.create_new_tetrimino();
                     if !current_piece.test_current_position(&tetris.game_map) {
                          print_game_information(&tetris);
                     }
                     tetris.current_piece=Some(current_piece);
+               }
+               if tetris.next_piece.is_none() {
+                    let next_piece=tetris.create_new_tetrimino();
+                    tetris.next_piece=Some(next_piece);
+               }
+               if let Some(ref piece) = tetris.next_piece {
+                    for (line_nb,line) in piece.states[piece.current_state as usize].iter().enumerate() {
+                         for (case_nb,case) in line.iter().enumerate() {
+                              if *case == 0 {
+                                  continue
+                              }
+                              canvas.copy(&textures[*case as usize -1], 
+                                   None, 
+                                   Rect::new(
+                                        ghost_grid_x + (case_nb as isize)as i32 * GHOST_HEIGHT as i32, 
+                                        ghost_grid_y + (line_nb)as i32 * GHOST_HEIGHT as i32, 
+                                        GHOST_HEIGHT as u32, GHOST_HEIGHT as u32)
+                              ).expect("no se pudo la textura del ghost");
+                         }
+                    }
                }
                let mut quit=false;
                if !handle_events(&mut tetris, &mut quit, &mut timer, &mut event_pump) {
@@ -409,9 +448,9 @@ fn main() {
                                    canvas.copy(&textures[*case as usize - 1], 
                                         None, 
                                         Rect::new(
-                                                  grid_x + (piece.x + case_nb as isize)as i32 * TETRIS_HEIGHT as i32, 
-                                                  grid_y + (piece.y + line_nb)as i32 * TETRIS_HEIGHT as i32, 
-                                                  TETRIS_HEIGHT as u32,TETRIS_HEIGHT as u32)
+                                             grid_x + (piece.x + case_nb as isize)as i32 * TETRIS_HEIGHT as i32, 
+                                             grid_y + (piece.y + line_nb)as i32 * TETRIS_HEIGHT as i32, 
+                                             TETRIS_HEIGHT as u32,TETRIS_HEIGHT as u32)
                                    ).expect("no se pudo copiar la textura en la ventana");
                               }
                          }
@@ -439,7 +478,6 @@ fn main() {
                canvas.present();
                sleep(Duration::new(1 / 60, 0));
           }
-          // let new_window=create_texture_rect(&mut canvas, &texture_creator, r, g, b, width, height)
           'new:loop {
                for event in event_pump.poll_iter() {
                     match event {
