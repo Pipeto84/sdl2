@@ -344,8 +344,8 @@ fn main() {
           let mut event_pump=sdl2_context.event_pump().expect("fallo el event pump");
           let grid_x=20;
           let grid_y=(height-TETRIS_HEIGHT as u32 * 16)as i32 / 2;
-          let ghost_grid_x=480;
-          let ghost_grid_y=590;
+          let next_grid_x=480;
+          let next_grid_y=590;
           let mut tetris=Tetris::new();
           let window=video_subsystem.window("Tetris", width, height)
                .position_centered()
@@ -364,10 +364,10 @@ fn main() {
           let border=create_texture_rect(&mut canvas, &texture_creator, 255, 255, 255, 
                TETRIS_HEIGHT as u32 * 10 + 20, TETRIS_HEIGHT as u32 * 16 + 20)
                .expect("fallo la creacion de textura");
-          let ghost_grid=create_texture_rect(&mut canvas, &texture_creator, 0, 0, 0, 
+          let next_grid=create_texture_rect(&mut canvas, &texture_creator, 0, 0, 0, 
                GHOST_HEIGHT as u32 * 4, GHOST_HEIGHT as u32 * 4)
                .expect("fallo la creacion de textura");
-          let ghost_border=create_texture_rect(&mut canvas, &texture_creator, 255, 255, 255, 
+          let next_border=create_texture_rect(&mut canvas, &texture_creator, 255, 255, 255, 
                GHOST_HEIGHT as u32 * 4 + 20, GHOST_HEIGHT as u32 * 4 + 20)
                .expect("fallo la creacion de textura");
           macro_rules! texture {
@@ -375,6 +375,7 @@ fn main() {
                     create_texture_rect(&mut canvas,&texture_creator,$r,$g,$b,
                     TETRIS_HEIGHT as u32,TETRIS_HEIGHT as u32).unwrap())
           }
+          let ghost_texture=texture!(150,150,150);
           let textures=[texture!(255,69,69),texture!(255,220,69),texture!(237,150,37),
                texture!(171,99,237),texture!(77,149,239),texture!(39,218,225),texture!(45,216,47)];
           'user:loop {
@@ -404,10 +405,10 @@ fn main() {
                     (height - TETRIS_HEIGHT as u32 * 16) as i32 / 2, 
                     TETRIS_HEIGHT as u32 * 10, TETRIS_HEIGHT as u32 * 16))
                     .expect("no se pudo copiar la textura en la ventana");
-               canvas.copy(&ghost_border, None, 
+               canvas.copy(&next_border, None, 
                     Rect::new(470, 580, GHOST_HEIGHT as u32 * 4 + 20, GHOST_HEIGHT as u32 * 4 + 20))
                     .expect("fallo textura ghost");
-               canvas.copy(&ghost_grid, None, 
+               canvas.copy(&next_grid, None, 
                     Rect::new(480, 590, GHOST_HEIGHT as u32 * 4, GHOST_HEIGHT as u32 * 4))
                     .expect("fallo textura ghost");
                if tetris.current_piece.is_none() {
@@ -430,8 +431,8 @@ fn main() {
                               canvas.copy(&textures[*case as usize -1], 
                                    None, 
                                    Rect::new(
-                                        ghost_grid_x + (case_nb as isize)as i32 * GHOST_HEIGHT as i32, 
-                                        ghost_grid_y + (line_nb)as i32 * GHOST_HEIGHT as i32, 
+                                        next_grid_x + (case_nb as isize)as i32 * GHOST_HEIGHT as i32, 
+                                        next_grid_y + (line_nb)as i32 * GHOST_HEIGHT as i32, 
                                         GHOST_HEIGHT as u32, GHOST_HEIGHT as u32)
                               ).expect("no se pudo la textura del ghost");
                          }
@@ -452,6 +453,19 @@ fn main() {
                                              grid_y + (piece.y + line_nb)as i32 * TETRIS_HEIGHT as i32, 
                                              TETRIS_HEIGHT as u32,TETRIS_HEIGHT as u32)
                                    ).expect("no se pudo copiar la textura en la ventana");
+                                   let mut down_ghost=piece.y;
+                                   while piece.test_position(&tetris.game_map,piece.current_state as usize,piece.x,down_ghost + 1) {
+                                        down_ghost += 1;
+                                        if down_ghost > 16 {
+                                             break;
+                                        }
+                                   }
+                                   canvas.copy(&ghost_texture, None, 
+                                        Rect::new(
+                                             grid_x + (piece.x + case_nb as isize)as i32 * TETRIS_HEIGHT as i32, 
+                                             grid_y + ( line_nb + down_ghost)as i32 * TETRIS_HEIGHT as i32, 
+                                             TETRIS_HEIGHT as u32, TETRIS_HEIGHT as u32)
+                                   ).expect("fallo copiar el ghost");
                               }
                          }
                     }
@@ -496,6 +510,9 @@ fn main() {
                }
                canvas.set_draw_color(Color::RGB(255, 0, 0));
                canvas.clear();
+               let game_over=create_texture_from_text(&texture_creator, &font, "Game over...", 0, 0, 0).expect("fallo texto new_game");
+               canvas.copy(&game_over, None, Rect::new(100, 0, 500, 200))
+                    .expect("fallo texto new_game");
                let new_game1=create_texture_from_text(&texture_creator, &font, "New game?", 0, 0, 0).expect("fallo texto new_game");
                canvas.copy(&new_game1, None, Rect::new(100, 200, 500, 200))
                     .expect("fallo texto new_game");
